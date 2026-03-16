@@ -223,3 +223,11 @@ button:disabled {
 .theme-switcher button:hover {
     transform: scale(1.1);
 }
+
+.selection-box {
+    position: fixed;
+    border: 2px dashed var(--selected-border);
+    background: var(--selected-shadow);
+    pointer-events: none;
+    z-index: 1000;
+}

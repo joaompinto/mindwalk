@@ -14,11 +14,12 @@
     <div class="help">
         <strong>Controls:</strong><br>
         <kbd>Tab</kbd> - Add child node<br>
-        <kbd>Enter</kbd> - Add sibling node<br>
+        <kbd>Insert</kbd> / <kbd>Enter</kbd> - Add sibling node<br>
         <kbd>Delete</kbd> / <kbd>Backspace</kbd> - Delete node<br>
         <kbd>Click</kbd> - Select / Edit<br>
+        <kbd>Ctrl+Click</kbd> - Multi-select<br>
         <kbd>Drag</kbd> - Move node<br>
-        <kbd>Shift+Drag</kbd> - Pan canvas
+        <kbd>Canvas Drag</kbd> - Select multiple
     </div>
 
     <svg id="connections"></svg>
@@ -26,7 +27,7 @@
 
     <div class="controls">
         <button onclick="app.addChild()">Add Child (Tab)</button>
-        <button onclick="app.addSibling()">Add Sibling (Enter)</button>
+        <button onclick="app.addSibling()">Add Sibling (Ins)</button>
         <button onclick="app.deleteNode()">Delete (Del)</button>
         <button id="btn-save" onclick="app.saveToStorage()">Save</button>
         <button id="btn-load" onclick="app.loadFromStorage()">Load</button>
@@ -77,12 +78,27 @@
                 this.nodes = new Map();
                 this.nextId = 1;
                 this.selectedId = null;
+                this.selectedIds = new Set(); // Multiple selection
                 this.draggingId = null;
                 this.isPanning = false;
                 this.panStart = { x: 0, y: 0 };
                 this.canvasOffset = { x: 0, y: 0 };
                 
+                // Selection box
+                this.isSelecting = false;
+                this.selectionStart = { x: 0, y: 0 };
+                this.selectionBox = null;
+                
+                // Grid settings
+                this.gridSize = 10;
+                this.snapToGrid = true;
+                
                 this.init();
+            }
+
+            snap(value) {
+                if (!this.snapToGrid) return value;
+                return Math.round(value / this.gridSize) * this.gridSize;
             }
 
             init() {
@@ -100,7 +116,7 @@
                 }
                 
                 // Create root node if no saved data
-                this.createNode(null, 'Central Topic', window.innerWidth / 2 - 60, window.innerHeight / 2 - 20, true);
+                this.createNode(null, 'Central Topic', this.snap(window.innerWidth / 2 - 60), this.snap(window.innerHeight / 2 - 20), true);
                 
                 this.setupEvents();
             }
@@ -137,31 +153,69 @@
                 }
             }
 
-            createNode(parentId, text = 'New Node', x, y, isRoot = false) {
+            createNode(parentId, text = 'New Node', x, y, isRoot = false, skipReposition = false, autoEdit = false, insertAfterOrder = null) {
                 const id = this.nextId++;
+                
+                // Calculate order for child nodes
+                let order = 0;
+                if (parentId !== null) {
+                    const siblings = Array.from(this.nodes.values()).filter(n => n.parentId === parentId);
+                    
+                    // First, ensure all existing siblings have an order assigned
+                    siblings.sort((a, b) => (a.order ?? 999999) - (b.order ?? 999999));
+                    siblings.forEach((sibling, index) => {
+                        if (sibling.order === undefined) {
+                            sibling.order = index;
+                        }
+                    });
+                    
+                    if (insertAfterOrder !== null) {
+                        // Insert after the specified order
+                        order = insertAfterOrder + 1;
+                        // Increment order of all siblings that come after
+                        for (const sibling of siblings) {
+                            if (sibling.order >= order) {
+                                sibling.order++;
+                            }
+                        }
+                    } else {
+                        // Add to the end
+                        order = siblings.length;
+                    }
+                }
+                
                 const node = {
                     id,
                     parentId,
                     text,
                     x: x || 0,
                     y: y || 0,
-                    isRoot
+                    isRoot,
+                    order
                 };
 
                 if (parentId !== null && x === undefined) {
-                    // Auto-position child node
+                    // Position will be calculated after adding to nodes
                     const parent = this.nodes.get(parentId);
-                    const siblings = Array.from(this.nodes.values()).filter(n => n.parentId === parentId);
-                    const angle = (siblings.length * 60) * (Math.PI / 180);
-                    const distance = 150;
-                    node.x = parent.x + Math.cos(angle) * distance;
-                    node.y = parent.y + Math.sin(angle) * distance;
+                    node.x = parent.x;
+                    node.y = parent.y + 100;
                 }
 
                 this.nodes.set(id, node);
                 this.renderNode(node);
+                
+                // Calculate proper position for child nodes
+                if (parentId !== null && x === undefined && !skipReposition) {
+                    this.repositionChildren(parentId);
+                }
+                
                 this.renderConnections();
                 this.selectNode(id);
+                
+                // Auto-enter edit mode if requested
+                if (autoEdit) {
+                    setTimeout(() => this.editNode(id), 0);
+                }
                 
                 return id;
             }
@@ -213,25 +267,78 @@
                 const endX = child.x + 40;
                 const endY = child.y + 20;
                 
-                const midX = (startX + endX) / 2;
-                
-                const d = `M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`;
+                // Angular tree-style connection: vertical line down, then horizontal
+                const midY = (startY + endY) / 2;
+                const d = `M ${startX} ${startY} L ${startX} ${midY} L ${endX} ${midY} L ${endX} ${endY}`;
                 path.setAttribute('d', d);
                 
                 this.svg.appendChild(path);
             }
 
-            selectNode(id) {
-                if (this.selectedId !== null) {
-                    const prev = document.getElementById(`node-${this.selectedId}`);
-                    if (prev) prev.classList.remove('selected');
+            selectNode(id, multiSelect = false) {
+                if (!multiSelect) {
+                    // Clear previous selection
+                    for (const selId of this.selectedIds) {
+                        const prev = document.getElementById(`node-${selId}`);
+                        if (prev) prev.classList.remove('selected');
+                    }
+                    this.selectedIds.clear();
+                    
+                    if (this.selectedId !== null) {
+                        const prev = document.getElementById(`node-${this.selectedId}`);
+                        if (prev) prev.classList.remove('selected');
+                    }
+                    
+                    this.selectedId = id;
+                    
+                    if (id !== null) {
+                        const el = document.getElementById(`node-${id}`);
+                        if (el) el.classList.add('selected');
+                        this.selectedIds.add(id);
+                    }
+                } else {
+                    // Multi-select mode
+                    if (id === null) return;
+                    
+                    if (this.selectedIds.has(id)) {
+                        // Deselect if already selected
+                        this.selectedIds.delete(id);
+                        const el = document.getElementById(`node-${id}`);
+                        if (el) el.classList.remove('selected');
+                        if (this.selectedId === id) {
+                            this.selectedId = this.selectedIds.size > 0 ? Array.from(this.selectedIds)[0] : null;
+                        }
+                    } else {
+                        // Add to selection
+                        this.selectedIds.add(id);
+                        this.selectedId = id;
+                        const el = document.getElementById(`node-${id}`);
+                        if (el) el.classList.add('selected');
+                    }
+                }
+            }
+
+            selectNodesInBox(x1, y1, x2, y2) {
+                const minX = Math.min(x1, x2);
+                const maxX = Math.max(x1, x2);
+                const minY = Math.min(y1, y2);
+                const maxY = Math.max(y1, y2);
+                
+                for (const node of this.nodes.values()) {
+                    const nodeCenterX = node.x + 40; // node width/2
+                    const nodeCenterY = node.y + 20; // node height/2
+                    
+                    if (nodeCenterX >= minX && nodeCenterX <= maxX &&
+                        nodeCenterY >= minY && nodeCenterY <= maxY) {
+                        this.selectedIds.add(node.id);
+                        const el = document.getElementById(`node-${node.id}`);
+                        if (el) el.classList.add('selected');
+                    }
                 }
                 
-                this.selectedId = id;
-                
-                if (id !== null) {
-                    const el = document.getElementById(`node-${id}`);
-                    if (el) el.classList.add('selected');
+                // Update primary selection
+                if (this.selectedIds.size > 0) {
+                    this.selectedId = Array.from(this.selectedIds)[0];
                 }
             }
 
@@ -244,7 +351,8 @@
 
             onNodeClick(e, id) {
                 e.stopPropagation();
-                this.selectNode(id);
+                const multiSelect = e.ctrlKey || e.metaKey;
+                this.selectNode(id, multiSelect);
             }
 
             onNodeDoubleClick(e, id) {
@@ -300,21 +408,65 @@
 
             finishEdit(id, text) {
                 const node = this.nodes.get(id);
+                if (!node) return;
+                
                 node.text = text.trim() || 'New Node';
                 
                 const el = document.getElementById(`node-${id}`);
+                if (!el) return;
+                
                 const input = el.querySelector('input');
-                if (input) {
-                    const span = document.createElement('span');
-                    span.textContent = node.text;
+                if (!input) return; // Already finished editing
+                
+                // Check if input is still connected to DOM
+                if (!input.isConnected) return;
+                
+                const span = document.createElement('span');
+                span.textContent = node.text;
+                
+                try {
                     input.replaceWith(span);
+                } catch (e) {
+                    // Input was already removed, ignore error
                 }
             }
 
             addChild() {
                 if (this.selectedId === null) return;
-                const parent = this.nodes.get(this.selectedId);
-                this.createNode(this.selectedId);
+                return this.createNode(this.selectedId, '', undefined, undefined, false, false, true);
+            }
+
+            repositionChildren(parentId) {
+                const parent = this.nodes.get(parentId);
+                const children = Array.from(this.nodes.values())
+                    .filter(n => n.parentId === parentId)
+                    .sort((a, b) => a.order - b.order);
+                
+                console.log('repositionChildren called:', {
+                    parentId,
+                    childrenCount: children.length,
+                    children: children.map(c => ({ id: c.id, order: c.order, text: c.text }))
+                });
+                
+                const verticalSpacing = 100;
+                const horizontalSpacing = 160;
+                
+                // Center the children under the parent with even spacing
+                const totalWidth = Math.max(0, children.length - 1) * horizontalSpacing;
+                const startX = parent.x - totalWidth / 2;
+                
+                console.log('repositioning:', { parentX: parent.x, startX, totalWidth });
+                
+                children.forEach((child, index) => {
+                    const newX = this.snap(startX + index * horizontalSpacing);
+                    const newY = this.snap(parent.y + verticalSpacing);
+                    console.log(`child ${child.id} (${child.text}): order=${child.order}, index=${index}, pos=(${newX}, ${newY})`);
+                    child.x = newX;
+                    child.y = newY;
+                    this.updateNode(child);
+                });
+                
+                this.renderConnections();
             }
 
             addSibling() {
@@ -323,26 +475,32 @@
                 if (node.parentId === null) {
                     this.addChild();
                 } else {
-                    this.createNode(node.parentId);
+                    this.createNode(node.parentId, '', undefined, undefined, false, true, true, node.order);
+                    // Reposition all siblings including the new one
+                    this.repositionChildren(node.parentId);
                 }
             }
 
             deleteNode() {
-                if (this.selectedId === null) return;
-                const node = this.nodes.get(this.selectedId);
-                if (node.isRoot) {
-                    alert('Cannot delete root node');
-                    return;
+                if (this.selectedIds.size === 0 && this.selectedId === null) return;
+                
+                // Get all nodes to delete (from multi-selection or single selection)
+                const idsToDelete = this.selectedIds.size > 0 ? Array.from(this.selectedIds) : [this.selectedId];
+                
+                for (const id of idsToDelete) {
+                    const node = this.nodes.get(id);
+                    if (!node || node.isRoot) continue;
+                    
+                    // Delete all children recursively
+                    this.deleteChildren(id);
+                    
+                    // Delete node
+                    this.nodes.delete(id);
+                    const el = document.getElementById(`node-${id}`);
+                    if (el) el.remove();
                 }
                 
-                // Delete all children recursively
-                this.deleteChildren(this.selectedId);
-                
-                // Delete node
-                this.nodes.delete(this.selectedId);
-                const el = document.getElementById(`node-${this.selectedId}`);
-                if (el) el.remove();
-                
+                this.selectedIds.clear();
                 this.selectedId = null;
                 this.renderConnections();
             }
@@ -360,12 +518,23 @@
 
             clearAll() {
                 if (!confirm('Clear all nodes?')) return;
+                
+                // Remove any active input elements first to prevent blur events
+                const activeInput = document.querySelector('.node input');
+                if (activeInput) {
+                    // Replace input with span to trigger cleanup
+                    const span = document.createElement('span');
+                    span.textContent = activeInput.value.trim() || 'New Node';
+                    activeInput.replaceWith(span);
+                }
+                
                 this.canvas.innerHTML = '';
                 this.svg.innerHTML = '';
                 this.nodes.clear();
+                this.selectedIds.clear();
                 this.nextId = 1;
                 this.selectedId = null;
-                this.createNode(null, 'Central Topic', window.innerWidth / 2 - 60, window.innerHeight / 2 - 20, true);
+                this.createNode(null, 'Central Topic', this.snap(window.innerWidth / 2 - 60), this.snap(window.innerHeight / 2 - 20), true);
             }
 
             saveToStorage() {
@@ -427,41 +596,49 @@
             }
 
             setupEvents() {
-                // Canvas panning
+                // Canvas mouse events for selection box
                 document.addEventListener('mousedown', (e) => {
-                    if (e.shiftKey || e.target === this.canvas || e.target === document.body) {
-                        this.isPanning = true;
-                        this.panStart = { x: e.clientX, y: e.clientY };
-                        this.canvas.classList.add('panning');
+                    // Start selection box on canvas click (not on nodes)
+                    if (e.target === this.canvas || e.target === document.body || e.target === this.svg) {
+                        // Clear selection if not holding Ctrl/Cmd
+                        if (!e.ctrlKey && !e.metaKey) {
+                            for (const selId of this.selectedIds) {
+                                const prev = document.getElementById(`node-${selId}`);
+                                if (prev) prev.classList.remove('selected');
+                            }
+                            this.selectedIds.clear();
+                            this.selectedId = null;
+                        }
+                        
+                        this.isSelecting = true;
+                        this.selectionStart = { x: e.clientX, y: e.clientY };
+                        this.createSelectionBox(e.clientX, e.clientY);
                     }
                 });
 
                 document.addEventListener('mousemove', (e) => {
                     if (this.draggingId !== null) {
                         const node = this.nodes.get(this.draggingId);
-                        node.x = e.clientX - 40;
-                        node.y = e.clientY - 20;
+                        node.x = this.snap(e.clientX - 40);
+                        node.y = this.snap(e.clientY - 20);
                         this.updateNode(node);
                         this.renderConnections();
-                    } else if (this.isPanning) {
-                        const dx = e.clientX - this.panStart.x;
-                        const dy = e.clientY - this.panStart.y;
-                        
-                        for (const node of this.nodes.values()) {
-                            node.x += dx;
-                            node.y += dy;
-                            this.updateNode(node);
-                        }
-                        
-                        this.panStart = { x: e.clientX, y: e.clientY };
-                        this.renderConnections();
+                    } else if (this.isSelecting) {
+                        this.updateSelectionBox(e.clientX, e.clientY);
                     }
                 });
 
-                document.addEventListener('mouseup', () => {
+                document.addEventListener('mouseup', (e) => {
                     this.draggingId = null;
-                    this.isPanning = false;
-                    this.canvas.classList.remove('panning');
+                    
+                    if (this.isSelecting) {
+                        // Finalize selection
+                        const endX = e.clientX;
+                        const endY = e.clientY;
+                        this.selectNodesInBox(this.selectionStart.x, this.selectionStart.y, endX, endY);
+                        this.removeSelectionBox();
+                        this.isSelecting = false;
+                    }
                 });
 
                 // Keyboard shortcuts
@@ -476,6 +653,10 @@
                         case 'Enter':
                             this.addSibling();
                             break;
+                        case 'Insert':
+                            e.preventDefault();
+                            this.addSibling();
+                            break;
                         case 'Delete':
                         case 'Backspace':
                             this.deleteNode();
@@ -488,6 +669,37 @@
                 const div = document.createElement('div');
                 div.textContent = text;
                 return div.innerHTML;
+            }
+
+            createSelectionBox(x, y) {
+                this.selectionBox = document.createElement('div');
+                this.selectionBox.className = 'selection-box';
+                this.selectionBox.style.left = `${x}px`;
+                this.selectionBox.style.top = `${y}px`;
+                this.selectionBox.style.width = '0px';
+                this.selectionBox.style.height = '0px';
+                document.body.appendChild(this.selectionBox);
+            }
+
+            updateSelectionBox(x, y) {
+                if (!this.selectionBox) return;
+                
+                const minX = Math.min(this.selectionStart.x, x);
+                const minY = Math.min(this.selectionStart.y, y);
+                const width = Math.abs(x - this.selectionStart.x);
+                const height = Math.abs(y - this.selectionStart.y);
+                
+                this.selectionBox.style.left = `${minX}px`;
+                this.selectionBox.style.top = `${minY}px`;
+                this.selectionBox.style.width = `${width}px`;
+                this.selectionBox.style.height = `${height}px`;
+            }
+
+            removeSelectionBox() {
+                if (this.selectionBox) {
+                    this.selectionBox.remove();
+                    this.selectionBox = null;
+                }
             }
         }
 
