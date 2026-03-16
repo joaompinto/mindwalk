@@ -63,83 +63,21 @@ body {
 #canvas {
     width: 100vw;
     height: 100vh;
-    cursor: grab;
+    cursor: default;
+    background: var(--bg-color);
 }
 
-#canvas.panning {
+#canvas:active {
     cursor: grabbing;
 }
 
-.node {
-    position: absolute;
-    background: var(--node-bg);
-    border: 2px solid var(--node-border);
-    border-radius: 8px;
-    padding: 8px 16px;
-    min-width: 80px;
-    text-align: center;
-    cursor: pointer;
-    user-select: none;
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    box-shadow: 0 2px 8px var(--node-shadow);
-    transition: box-shadow 0.2s, background 0.3s, border-color 0.3s;
-    color: var(--node-text);
-}
-
-.node span {
-    user-select: none;
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    pointer-events: none;
-}
-
-.node:hover {
-    box-shadow: 0 4px 12px var(--node-shadow-hover);
-}
-
-.node.selected {
-    border-color: var(--selected-border);
-    box-shadow: 0 0 0 3px var(--selected-shadow);
-}
-
-.node.root {
-    background: var(--root-bg);
-    color: white;
-    border-color: var(--root-border);
-    font-weight: bold;
-}
-
-.node input {
-    border: none;
+/* Vis.js specific styles */
+#canvas .vis-network {
     outline: none;
-    background: transparent;
-    text-align: center;
-    font: inherit;
-    width: auto;
-    min-width: 20px;
-    padding: 0;
-    margin: 0;
-    color: inherit;
-    pointer-events: auto;
 }
 
-svg {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-}
-
-path {
-    fill: none;
-    stroke: var(--path-stroke);
-    stroke-width: 2;
-    transition: stroke 0.3s ease;
+#canvas .vis-network canvas {
+    outline: none;
 }
 
 .controls {
@@ -154,6 +92,7 @@ path {
     border-radius: 30px;
     box-shadow: 0 4px 12px var(--controls-shadow);
     transition: background 0.3s ease, box-shadow 0.3s ease;
+    z-index: 100;
 }
 
 button {
@@ -188,6 +127,36 @@ button:disabled {
     color: var(--help-text);
     line-height: 1.6;
     transition: background 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+    z-index: 100;
+}
+
+.help.hidden {
+    display: none;
+}
+
+.help-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--help-text);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, color 0.2s;
+}
+
+.help-close:hover {
+    background: var(--selected-shadow);
+    color: var(--node-text);
 }
 
 .help kbd {
@@ -224,10 +193,329 @@ button:disabled {
     transform: scale(1.1);
 }
 
-.selection-box {
+.toast {
     position: fixed;
-    border: 2px dashed var(--selected-border);
-    background: var(--selected-shadow);
+    bottom: 100px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: #333;
+    color: #fff;
+    padding: 12px 24px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    font-size: 14px;
+    opacity: 0;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    z-index: 10000;
     pointer-events: none;
-    z-index: 1000;
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+/* Edit Modal */
+.edit-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+}
+
+.edit-modal-content {
+    background: var(--controls-bg);
+    padding: 24px;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    min-width: 320px;
+    max-width: 400px;
+}
+
+.edit-modal-content h3 {
+    margin: 0 0 16px 0;
+    color: var(--node-text);
+    font-size: 18px;
+}
+
+.edit-modal-content input[type="text"] {
+    width: 100%;
+    padding: 10px 12px;
+    border: 2px solid var(--node-border);
+    border-radius: 8px;
+    background: var(--node-bg);
+    color: var(--node-text);
+    font-size: 14px;
+    margin-bottom: 16px;
+    outline: none;
+}
+
+.edit-modal-content input[type="text"]:focus {
+    border-color: var(--selected-border);
+}
+
+.color-picker {
+    margin-bottom: 20px;
+}
+
+.color-picker label {
+    display: block;
+    color: var(--node-text);
+    font-size: 14px;
+    margin-bottom: 8px;
+}
+
+.color-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.color-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    padding: 0;
+    transition: transform 0.2s, border-color 0.2s;
+}
+
+.color-btn:hover {
+    transform: scale(1.1);
+}
+
+.color-btn.selected {
+    border-color: var(--selected-border);
+    box-shadow: 0 0 0 2px var(--controls-bg), 0 0 0 4px var(--selected-border);
+}
+
+.color-btn[data-color=""] {
+    font-size: 10px;
+    width: auto;
+    padding: 0 8px;
+    border-radius: 16px;
+}
+
+#edit-color-custom {
+    width: 100%;
+    height: 40px;
+    border: 2px solid var(--node-border);
+    border-radius: 8px;
+    cursor: pointer;
+    background: none;
+}
+
+.edit-modal-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+.edit-modal-buttons button {
+    padding: 8px 20px;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.edit-modal-buttons button:first-child {
+    background: var(--button-bg);
+    color: white;
+    border: none;
+}
+
+.edit-modal-buttons button:first-child:hover {
+    background: var(--button-hover);
+}
+
+.edit-modal-buttons button:last-child {
+    background: transparent;
+    color: var(--node-text);
+    border: 2px solid var(--node-border);
+}
+
+.edit-modal-buttons button:last-child:hover {
+    background: var(--selected-shadow);
+}
+
+/* Context Menu */
+.context-menu {
+    position: fixed;
+    background: var(--controls-bg);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px var(--controls-shadow);
+    padding: 8px 0;
+    z-index: 10000;
+    min-width: 160px;
+    animation: contextMenuFadeIn 0.1s ease;
+}
+
+@keyframes contextMenuFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.context-menu-item {
+    padding: 10px 16px;
+    color: var(--node-text);
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.context-menu-item:hover {
+    background: var(--selected-shadow);
+}
+
+.context-menu-item.disabled {
+    color: var(--button-disabled);
+    cursor: not-allowed;
+}
+
+.context-menu-item.disabled:hover {
+    background: transparent;
+}
+
+.context-menu-divider {
+    height: 1px;
+    background: var(--node-border);
+    margin: 6px 0;
+    opacity: 0.3;
+}
+
+/* Submenu */
+.context-submenu {
+    position: fixed;
+    background: var(--controls-bg);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px var(--controls-shadow);
+    padding: 8px 0;
+    z-index: 10001;
+    min-width: 140px;
+    animation: contextMenuFadeIn 0.1s ease;
+}
+
+/* Move Under Modal */
+.move-under-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10001;
+}
+
+.move-under-modal-content {
+    background: var(--controls-bg);
+    padding: 24px;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    min-width: 300px;
+    max-width: 400px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.move-under-modal-content h3 {
+    margin: 0 0 16px 0;
+    color: var(--node-text);
+    font-size: 18px;
+}
+
+.move-under-node-list {
+    overflow-y: auto;
+    max-height: 300px;
+    margin-bottom: 16px;
+    border: 1px solid var(--node-border);
+    border-radius: 8px;
+}
+
+.move-under-node-item {
+    padding: 10px 12px;
+    color: var(--node-text);
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+    border-bottom: 1px solid var(--node-border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.move-under-node-item:last-child {
+    border-bottom: none;
+}
+
+.move-under-node-item:hover {
+    background: var(--selected-shadow);
+}
+
+.move-under-node-item.selected {
+    background: var(--selected-shadow);
+}
+
+.move-under-node-item.disabled {
+    color: var(--button-disabled);
+    cursor: not-allowed;
+}
+
+.move-under-node-item.disabled:hover {
+    background: transparent;
+}
+
+.move-under-modal-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+.move-under-modal-buttons button {
+    padding: 8px 20px;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.move-under-modal-buttons button:first-child {
+    background: var(--button-bg);
+    color: white;
+    border: none;
+}
+
+.move-under-modal-buttons button:first-child:hover {
+    background: var(--button-hover);
+}
+
+.move-under-modal-buttons button:last-child {
+    background: transparent;
+    color: var(--node-text);
+    border: 2px solid var(--node-border);
+}
+
+.move-under-modal-buttons button:last-child:hover {
+    background: var(--selected-shadow);
 }
