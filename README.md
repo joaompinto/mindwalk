@@ -2,6 +2,8 @@
 
 A simple, interactive mind mapping application that runs in your browser.
 
+![Screenshot](https://github.com/joaompinto/mindwalk/blob/main/Screenshot.png)
+
 ## Features
 
 - **Interactive Canvas**: Pan and zoom to navigate your mind map
@@ -16,8 +18,8 @@ A simple, interactive mind mapping application that runs in your browser.
 | Key | Action |
 |-----|--------|
 | `Tab` | Add child node |
-| `Enter` | Add sibling node |
-| `Delete` / `Backspace` | Delete selected node |
+| `Insert` | Add sibling node |
+| `Delete` | Delete selected node |
 | `Click` | Select / Edit node |
 | `Drag` | Move node |
 | `Shift + Drag` | Pan canvas |
