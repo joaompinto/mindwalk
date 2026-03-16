@@ -311,7 +311,7 @@ class MindMap {
                 if (!item.disabled) {
                     if (item.hasSubmenu) {
                         div.addEventListener('mouseenter', (e) => {
-                            this.showSubmenu(e.target, nodeId, item.submenuItems);
+                            this.showSubmenu(e.target, item.submenuItems);
                         });
                     } else {
                         div.addEventListener('click', () => {
@@ -345,11 +345,14 @@ class MindMap {
         this.hideSubmenu();
     }
 
-    showSubmenu(parentElement, nodeId, submenuItems) {
+    showSubmenu(parentElement, submenuItems) {
         this.hideSubmenu();
 
         const submenu = document.createElement('div');
         submenu.className = 'context-submenu';
+        
+        // Get all selected node IDs, or the single right-clicked node
+        const nodeIds = this.selectedIds.size > 0 ? Array.from(this.selectedIds) : [this.selectedId];
         
         submenuItems.forEach(({ name, color }) => {
             const div = document.createElement('div');
@@ -375,7 +378,7 @@ class MindMap {
             div.appendChild(textSpan);
             
             div.addEventListener('click', () => {
-                this.setNodeColor(nodeId, color);
+                this.setNodeColor(nodeIds, color);
                 this.hideContextMenu();
             });
             
@@ -774,32 +777,43 @@ class MindMap {
         return brightness > 0.6 ? '#000000' : '#ffffff';
     }
 
-    setNodeColor(nodeId, color) {
-        const node = this.nodes.get(nodeId);
-        if (!node) return;
+    setNodeColor(nodeIds, color) {
+        // Normalize to array
+        const ids = Array.isArray(nodeIds) ? nodeIds : [nodeIds];
+        
+        const updates = [];
+        
+        for (const nodeId of ids) {
+            const node = this.nodes.get(nodeId);
+            if (!node) continue;
 
-        if (color && color !== '') {
-            // Determine text color based on background brightness
-            const textColor = this.getContrastColor(color);
-            
-            // Apply custom color
-            this.nodes.update({
-                id: node.id,
-                color: { 
-                    background: color, 
-                    border: color,
-                    highlight: { background: color, border: color },
-                    hover: { background: color, border: color }
-                },
-                font: { color: textColor }
-            });
-        } else {
-            // Revert to default theme colors
-            this.nodes.update({
-                id: node.id,
-                color: null,
-                font: null
-            });
+            if (color && color !== '') {
+                // Determine text color based on background brightness
+                const textColor = this.getContrastColor(color);
+                
+                // Apply custom color
+                updates.push({
+                    id: node.id,
+                    color: { 
+                        background: color, 
+                        border: color,
+                        highlight: { background: color, border: color },
+                        hover: { background: color, border: color }
+                    },
+                    font: { color: textColor }
+                });
+            } else {
+                // Revert to default theme colors
+                updates.push({
+                    id: node.id,
+                    color: null,
+                    font: null
+                });
+            }
+        }
+        
+        if (updates.length > 0) {
+            this.nodes.update(updates);
         }
     }
 
@@ -979,6 +993,111 @@ class MindMap {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+    }
+
+    findNode() {
+        const allNodes = this.nodes.get();
+        if (allNodes.length === 0) {
+            this.showToast('No nodes to search');
+            return;
+        }
+
+        const modal = document.createElement('div');
+        modal.className = 'find-node-modal';
+        
+        modal.innerHTML = `
+            <div class="find-node-modal-content">
+                <h3>Find Node</h3>
+                <input type="text" id="find-search" placeholder="Type to search nodes..." autocomplete="off">
+                <div class="find-node-list"></div>
+                <div class="find-node-modal-buttons">
+                    <button id="find-cancel">Cancel</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        const searchInput = modal.querySelector('#find-search');
+        const nodeList = modal.querySelector('.find-node-list');
+        
+        searchInput.focus();
+
+        const renderNodeList = (filter = '') => {
+            const filteredNodes = allNodes
+                .filter(n => n.label.toLowerCase().includes(filter.toLowerCase()))
+                .sort((a, b) => a.label.localeCompare(b.label));
+            
+            if (filteredNodes.length === 0) {
+                nodeList.innerHTML = '<div class="find-node-empty">No nodes found</div>';
+                return;
+            }
+
+            nodeList.innerHTML = filteredNodes.map(node => `
+                <div class="find-node-item" data-node-id="${node.id}">
+                    <span>${node.isRoot ? '👑' : '📄'}</span>
+                    <span>${this.escapeHtml(node.label)}</span>
+                </div>
+            `).join('');
+
+            // Add click handlers
+            nodeList.querySelectorAll('.find-node-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const nodeId = parseInt(item.dataset.nodeId);
+                    this.selectAndFocusNode(nodeId);
+                    document.body.removeChild(modal);
+                });
+            });
+        };
+
+        // Initial render
+        renderNodeList();
+
+        // Search handler
+        searchInput.addEventListener('input', (e) => {
+            renderNodeList(e.target.value);
+        });
+
+        // Cancel button
+        modal.querySelector('#find-cancel').addEventListener('click', () => {
+            document.body.removeChild(modal);
+        });
+
+        // Close on backdrop click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                document.body.removeChild(modal);
+            }
+        });
+
+        // Handle Escape key
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                document.body.removeChild(modal);
+            } else if (e.key === 'Enter' && nodeList.querySelector('.find-node-item')) {
+                const firstItem = nodeList.querySelector('.find-node-item');
+                const nodeId = parseInt(firstItem.dataset.nodeId);
+                this.selectAndFocusNode(nodeId);
+                document.body.removeChild(modal);
+            }
+        });
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    selectAndFocusNode(nodeId) {
+        this.selectNode(nodeId);
+        this.network.focus(nodeId, {
+            scale: 1.0,
+            animation: {
+                duration: 500,
+                easingFunction: 'easeInOutQuad'
+            }
+        });
     }
 }
 
