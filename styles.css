@@ -1,0 +1,225 @@
+:root {
+    /* Light theme (default) */
+    --bg-color: #f5f5f5;
+    --node-bg: #ffffff;
+    --node-border: #333333;
+    --node-text: #333333;
+    --node-shadow: rgba(0, 0, 0, 0.1);
+    --node-shadow-hover: rgba(0, 0, 0, 0.15);
+    --selected-border: #4a90d9;
+    --selected-shadow: rgba(74, 144, 217, 0.3);
+    --root-bg: #4a90d9;
+    --root-border: #357abd;
+    --path-stroke: #999999;
+    --controls-bg: #ffffff;
+    --controls-shadow: rgba(0, 0, 0, 0.15);
+    --button-bg: #4a90d9;
+    --button-hover: #357abd;
+    --button-disabled: #cccccc;
+    --help-bg: #ffffff;
+    --help-shadow: rgba(0, 0, 0, 0.1);
+    --help-text: #666666;
+    --kbd-bg: #f0f0f0;
+    --kbd-text: #333333;
+}
+
+[data-theme="dark"] {
+    --bg-color: #1a1a2e;
+    --node-bg: #2d2d44;
+    --node-border: #4a4a6a;
+    --node-text: #e0e0e0;
+    --node-shadow: rgba(0, 0, 0, 0.3);
+    --node-shadow-hover: rgba(0, 0, 0, 0.4);
+    --selected-border: #5a9fd4;
+    --selected-shadow: rgba(90, 159, 212, 0.4);
+    --root-bg: #5a9fd4;
+    --root-border: #4a8fc4;
+    --path-stroke: #5a5a7a;
+    --controls-bg: #2d2d44;
+    --controls-shadow: rgba(0, 0, 0, 0.3);
+    --button-bg: #5a9fd4;
+    --button-hover: #4a8fc4;
+    --button-disabled: #555555;
+    --help-bg: #2d2d44;
+    --help-shadow: rgba(0, 0, 0, 0.3);
+    --help-text: #b0b0c0;
+    --kbd-bg: #3d3d5c;
+    --kbd-text: #e0e0e0;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow: hidden;
+    background: var(--bg-color);
+    transition: background 0.3s ease;
+}
+
+#canvas {
+    width: 100vw;
+    height: 100vh;
+    cursor: grab;
+}
+
+#canvas.panning {
+    cursor: grabbing;
+}
+
+.node {
+    position: absolute;
+    background: var(--node-bg);
+    border: 2px solid var(--node-border);
+    border-radius: 8px;
+    padding: 8px 16px;
+    min-width: 80px;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    box-shadow: 0 2px 8px var(--node-shadow);
+    transition: box-shadow 0.2s, background 0.3s, border-color 0.3s;
+    color: var(--node-text);
+}
+
+.node span {
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    pointer-events: none;
+}
+
+.node:hover {
+    box-shadow: 0 4px 12px var(--node-shadow-hover);
+}
+
+.node.selected {
+    border-color: var(--selected-border);
+    box-shadow: 0 0 0 3px var(--selected-shadow);
+}
+
+.node.root {
+    background: var(--root-bg);
+    color: white;
+    border-color: var(--root-border);
+    font-weight: bold;
+}
+
+.node input {
+    border: none;
+    outline: none;
+    background: transparent;
+    text-align: center;
+    font: inherit;
+    width: auto;
+    min-width: 20px;
+    padding: 0;
+    margin: 0;
+    color: inherit;
+    pointer-events: auto;
+}
+
+svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+path {
+    fill: none;
+    stroke: var(--path-stroke);
+    stroke-width: 2;
+    transition: stroke 0.3s ease;
+}
+
+.controls {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 10px;
+    background: var(--controls-bg);
+    padding: 10px 20px;
+    border-radius: 30px;
+    box-shadow: 0 4px 12px var(--controls-shadow);
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 20px;
+    background: var(--button-bg);
+    color: white;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.2s;
+}
+
+button:hover {
+    background: var(--button-hover);
+}
+
+button:disabled {
+    background: var(--button-disabled);
+    cursor: not-allowed;
+}
+
+.help {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    background: var(--help-bg);
+    padding: 15px 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px var(--help-shadow);
+    font-size: 13px;
+    color: var(--help-text);
+    line-height: 1.6;
+    transition: background 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.help kbd {
+    background: var(--kbd-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+    color: var(--kbd-text);
+    transition: background 0.3s ease, color 0.3s ease;
+}
+
+.theme-switcher {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 100;
+}
+
+.theme-switcher button {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    background: var(--controls-bg);
+    box-shadow: 0 2px 8px var(--controls-shadow);
+    transition: background 0.3s ease, transform 0.2s;
+}
+
+.theme-switcher button:hover {
+    transform: scale(1.1);
+}

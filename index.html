@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mind Map</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="theme-switcher">
+        <button id="theme-toggle" onclick="toggleTheme()" title="Toggle theme">🌙</button>
+    </div>
+
+    <div class="help">
+        <strong>Controls:</strong><br>
+        <kbd>Tab</kbd> - Add child node<br>
+        <kbd>Enter</kbd> - Add sibling node<br>
+        <kbd>Delete</kbd> / <kbd>Backspace</kbd> - Delete node<br>
+        <kbd>Click</kbd> - Select / Edit<br>
+        <kbd>Drag</kbd> - Move node<br>
+        <kbd>Shift+Drag</kbd> - Pan canvas
+    </div>
+
+    <svg id="connections"></svg>
+    <div id="canvas"></div>
+
+    <div class="controls">
+        <button onclick="app.addChild()">Add Child (Tab)</button>
+        <button onclick="app.addSibling()">Add Sibling (Enter)</button>
+        <button onclick="app.deleteNode()">Delete (Del)</button>
+        <button id="btn-save" onclick="app.saveToStorage()">Save</button>
+        <button id="btn-load" onclick="app.loadFromStorage()">Load</button>
+        <button onclick="app.exportJSON()">Export JSON</button>
+        <button onclick="app.clearAll()">Clear All</button>
+    </div>
+
+    <script>
+        // Theme management
+        function getPreferredTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme) return savedTheme;
+            return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+
+        function setTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+            updateThemeIcon(theme);
+        }
+
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            setTheme(newTheme);
+        }
+
+        function updateThemeIcon(theme) {
+            const btn = document.getElementById('theme-toggle');
+            btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+            btn.title = theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
+        }
+
+        // Initialize theme
+        setTheme(getPreferredTheme());
+
+        // Listen for system theme changes
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+            if (!localStorage.getItem('theme')) {
+                setTheme(e.matches ? 'dark' : 'light');
+            }
+        });
+
+        class MindMap {
+            constructor() {
+                this.canvas = document.getElementById('canvas');
+                this.svg = document.getElementById('connections');
+                this.nodes = new Map();
+                this.nextId = 1;
+                this.selectedId = null;
+                this.draggingId = null;
+                this.isPanning = false;
+                this.panStart = { x: 0, y: 0 };
+                this.canvasOffset = { x: 0, y: 0 };
+                
+                this.init();
+            }
+
+            init() {
+                // Check if running from file: protocol
+                const isFileProtocol = window.location.protocol === 'file:';
+                
+                // Try to load saved mind map if running via HTTP/HTTPS
+                if (!isFileProtocol) {
+                    const saved = localStorage.getItem('mindmap');
+                    if (saved) {
+                        this.loadFromStorageSilent();
+                        this.setupEvents();
+                        return;
+                    }
+                }
+                
+                // Create root node if no saved data
+                this.createNode(null, 'Central Topic', window.innerWidth / 2 - 60, window.innerHeight / 2 - 20, true);
+                
+                this.setupEvents();
+            }
+
+            loadFromStorageSilent() {
+                const saved = localStorage.getItem('mindmap');
+                if (!saved) return;
+                
+                const data = JSON.parse(saved);
+                
+                // Clear current
+                this.canvas.innerHTML = '';
+                this.svg.innerHTML = '';
+                this.nodes.clear();
+                
+                // Restore data
+                this.nextId = data.nextId;
+                for (const node of data.nodes) {
+                    this.nodes.set(node.id, node);
+                }
+                
+                // Re-render
+                for (const node of this.nodes.values()) {
+                    this.renderNode(node);
+                }
+                this.renderConnections();
+                
+                // Select root node
+                const rootNode = Array.from(this.nodes.values()).find(n => n.isRoot);
+                if (rootNode) {
+                    this.selectNode(rootNode.id);
+                } else {
+                    this.selectedId = null;
+                }
+            }
+
+            createNode(parentId, text = 'New Node', x, y, isRoot = false) {
+                const id = this.nextId++;
+                const node = {
+                    id,
+                    parentId,
+                    text,
+                    x: x || 0,
+                    y: y || 0,
+                    isRoot
+                };
+
+                if (parentId !== null && x === undefined) {
+                    // Auto-position child node
+                    const parent = this.nodes.get(parentId);
+                    const siblings = Array.from(this.nodes.values()).filter(n => n.parentId === parentId);
+                    const angle = (siblings.length * 60) * (Math.PI / 180);
+                    const distance = 150;
+                    node.x = parent.x + Math.cos(angle) * distance;
+                    node.y = parent.y + Math.sin(angle) * distance;
+                }
+
+                this.nodes.set(id, node);
+                this.renderNode(node);
+                this.renderConnections();
+                this.selectNode(id);
+                
+                return id;
+            }
+
+            renderNode(node) {
+                const el = document.createElement('div');
+                el.className = `node ${node.isRoot ? 'root' : ''}`;
+                el.id = `node-${node.id}`;
+                el.style.left = `${node.x}px`;
+                el.style.top = `${node.y}px`;
+                el.innerHTML = `<span>${this.escapeHtml(node.text)}</span>`;
+                
+                el.addEventListener('mousedown', (e) => this.onNodeMouseDown(e, node.id));
+                el.addEventListener('click', (e) => this.onNodeClick(e, node.id));
+                el.addEventListener('dblclick', (e) => this.onNodeDoubleClick(e, node.id));
+                
+                this.canvas.appendChild(el);
+            }
+
+            updateNode(node) {
+                const el = document.getElementById(`node-${node.id}`);
+                if (el) {
+                    el.style.left = `${node.x}px`;
+                    el.style.top = `${node.y}px`;
+                    if (!el.querySelector('input')) {
+                        el.querySelector('span').textContent = node.text;
+                    }
+                }
+            }
+
+            renderConnections() {
+                this.svg.innerHTML = '';
+                
+                for (const node of this.nodes.values()) {
+                    if (node.parentId !== null) {
+                        const parent = this.nodes.get(node.parentId);
+                        if (parent) {
+                            this.drawConnection(parent, node);
+                        }
+                    }
+                }
+            }
+
+            drawConnection(parent, child) {
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                
+                const startX = parent.x + 40;
+                const startY = parent.y + 20;
+                const endX = child.x + 40;
+                const endY = child.y + 20;
+                
+                const midX = (startX + endX) / 2;
+                
+                const d = `M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`;
+                path.setAttribute('d', d);
+                
+                this.svg.appendChild(path);
+            }
+
+            selectNode(id) {
+                if (this.selectedId !== null) {
+                    const prev = document.getElementById(`node-${this.selectedId}`);
+                    if (prev) prev.classList.remove('selected');
+                }
+                
+                this.selectedId = id;
+                
+                if (id !== null) {
+                    const el = document.getElementById(`node-${id}`);
+                    if (el) el.classList.add('selected');
+                }
+            }
+
+            onNodeMouseDown(e, id) {
+                if (e.shiftKey) return;
+                e.stopPropagation();
+                this.draggingId = id;
+                this.selectNode(id);
+            }
+
+            onNodeClick(e, id) {
+                e.stopPropagation();
+                this.selectNode(id);
+            }
+
+            onNodeDoubleClick(e, id) {
+                e.stopPropagation();
+                this.editNode(id);
+            }
+
+            editNode(id) {
+                const node = this.nodes.get(id);
+                const el = document.getElementById(`node-${id}`);
+                const span = el.querySelector('span');
+                
+                // Already in edit mode
+                if (!span) return;
+                
+                const input = document.createElement('input');
+                input.value = node.text;
+                input.addEventListener('input', (e) => {
+                    // Calculate required width
+                    const tempSpan = document.createElement('span');
+                    tempSpan.style.font = window.getComputedStyle(input).font;
+                    tempSpan.style.fontSize = window.getComputedStyle(input).fontSize;
+                    tempSpan.style.fontFamily = window.getComputedStyle(input).fontFamily;
+                    tempSpan.style.fontWeight = window.getComputedStyle(input).fontWeight;
+                    tempSpan.style.letterSpacing = window.getComputedStyle(input).letterSpacing;
+                    tempSpan.style.whiteSpace = 'pre';
+                    tempSpan.style.position = 'absolute';
+                    tempSpan.style.visibility = 'hidden';
+                    tempSpan.textContent = input.value || ' ';
+                    document.body.appendChild(tempSpan);
+                    const textWidth = tempSpan.getBoundingClientRect().width;
+                    document.body.removeChild(tempSpan);
+                    
+                    // Add padding to ensure text fits comfortably
+                    input.style.width = (textWidth + 10) + 'px';
+                });
+                input.addEventListener('blur', () => this.finishEdit(id, input.value));
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.stopPropagation();
+                        this.finishEdit(id, input.value);
+                    }
+                });
+                
+                span.replaceWith(input);
+                
+                // Trigger input event to set initial width
+                input.dispatchEvent(new Event('input'));
+                
+                input.focus();
+                input.select();
+            }
+
+            finishEdit(id, text) {
+                const node = this.nodes.get(id);
+                node.text = text.trim() || 'New Node';
+                
+                const el = document.getElementById(`node-${id}`);
+                const input = el.querySelector('input');
+                if (input) {
+                    const span = document.createElement('span');
+                    span.textContent = node.text;
+                    input.replaceWith(span);
+                }
+            }
+
+            addChild() {
+                if (this.selectedId === null) return;
+                const parent = this.nodes.get(this.selectedId);
+                this.createNode(this.selectedId);
+            }
+
+            addSibling() {
+                if (this.selectedId === null) return;
+                const node = this.nodes.get(this.selectedId);
+                if (node.parentId === null) {
+                    this.addChild();
+                } else {
+                    this.createNode(node.parentId);
+                }
+            }
+
+            deleteNode() {
+                if (this.selectedId === null) return;
+                const node = this.nodes.get(this.selectedId);
+                if (node.isRoot) {
+                    alert('Cannot delete root node');
+                    return;
+                }
+                
+                // Delete all children recursively
+                this.deleteChildren(this.selectedId);
+                
+                // Delete node
+                this.nodes.delete(this.selectedId);
+                const el = document.getElementById(`node-${this.selectedId}`);
+                if (el) el.remove();
+                
+                this.selectedId = null;
+                this.renderConnections();
+            }
+
+            deleteChildren(parentId) {
+                for (const [id, node] of this.nodes) {
+                    if (node.parentId === parentId) {
+                        this.deleteChildren(id);
+                        this.nodes.delete(id);
+                        const el = document.getElementById(`node-${id}`);
+                        if (el) el.remove();
+                    }
+                }
+            }
+
+            clearAll() {
+                if (!confirm('Clear all nodes?')) return;
+                this.canvas.innerHTML = '';
+                this.svg.innerHTML = '';
+                this.nodes.clear();
+                this.nextId = 1;
+                this.selectedId = null;
+                this.createNode(null, 'Central Topic', window.innerWidth / 2 - 60, window.innerHeight / 2 - 20, true);
+            }
+
+            saveToStorage() {
+                const data = {
+                    nodes: Array.from(this.nodes.values()),
+                    nextId: this.nextId
+                };
+                localStorage.setItem('mindmap', JSON.stringify(data));
+            }
+
+            loadFromStorage() {
+                const saved = localStorage.getItem('mindmap');
+                if (!saved) return;
+                
+                const data = JSON.parse(saved);
+                
+                // Clear current
+                this.canvas.innerHTML = '';
+                this.svg.innerHTML = '';
+                this.nodes.clear();
+                
+                // Restore data
+                this.nextId = data.nextId;
+                for (const node of data.nodes) {
+                    this.nodes.set(node.id, node);
+                }
+                
+                // Re-render
+                for (const node of this.nodes.values()) {
+                    this.renderNode(node);
+                }
+                this.renderConnections();
+                
+                // Select root node
+                const rootNode = Array.from(this.nodes.values()).find(n => n.isRoot);
+                if (rootNode) {
+                    this.selectNode(rootNode.id);
+                } else {
+                    this.selectedId = null;
+                }
+            }
+
+            exportJSON() {
+                const data = {
+                    nodes: Array.from(this.nodes.values()),
+                    nextId: this.nextId,
+                    exportedAt: new Date().toISOString()
+                };
+                const json = JSON.stringify(data, null, 2);
+                const blob = new Blob([json], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `mindmap_${new Date().toISOString().slice(0, 10)}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+
+            setupEvents() {
+                // Canvas panning
+                document.addEventListener('mousedown', (e) => {
+                    if (e.shiftKey || e.target === this.canvas || e.target === document.body) {
+                        this.isPanning = true;
+                        this.panStart = { x: e.clientX, y: e.clientY };
+                        this.canvas.classList.add('panning');
+                    }
+                });
+
+                document.addEventListener('mousemove', (e) => {
+                    if (this.draggingId !== null) {
+                        const node = this.nodes.get(this.draggingId);
+                        node.x = e.clientX - 40;
+                        node.y = e.clientY - 20;
+                        this.updateNode(node);
+                        this.renderConnections();
+                    } else if (this.isPanning) {
+                        const dx = e.clientX - this.panStart.x;
+                        const dy = e.clientY - this.panStart.y;
+                        
+                        for (const node of this.nodes.values()) {
+                            node.x += dx;
+                            node.y += dy;
+                            this.updateNode(node);
+                        }
+                        
+                        this.panStart = { x: e.clientX, y: e.clientY };
+                        this.renderConnections();
+                    }
+                });
+
+                document.addEventListener('mouseup', () => {
+                    this.draggingId = null;
+                    this.isPanning = false;
+                    this.canvas.classList.remove('panning');
+                });
+
+                // Keyboard shortcuts
+                document.addEventListener('keydown', (e) => {
+                    if (e.target.tagName === 'INPUT') return;
+                    
+                    switch (e.key) {
+                        case 'Tab':
+                            e.preventDefault();
+                            this.addChild();
+                            break;
+                        case 'Enter':
+                            this.addSibling();
+                            break;
+                        case 'Delete':
+                        case 'Backspace':
+                            this.deleteNode();
+                            break;
+                    }
+                });
+            }
+
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+        }
+
+        // Check if running from file: protocol
+        const isFileProtocol = window.location.protocol === 'file:';
+        
+        // Hide save/load buttons if running from file: protocol
+        if (isFileProtocol) {
+            document.getElementById('btn-save').style.display = 'none';
+            document.getElementById('btn-load').style.display = 'none';
+        }
+        
+        const app = new MindMap();
+    </script>
+</body>
+</html>
